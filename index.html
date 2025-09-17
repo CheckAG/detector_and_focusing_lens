@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spectrometer Design Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Warm Neutral (Slate, Zinc, Amber) -->
+    <!-- Application Structure Plan: A two-column interactive calculator dashboard. The left column contains all user inputs (sliders, fields) and calculated outputs, allowing for direct interaction and immediate feedback. The right column features a dynamic canvas visualization of the optical layout and contextual explanations from the source document. This structure separates the interactive "tool" from the educational "text," creating a user-friendly experience where users can experiment with parameters and see both the numerical and visual impact, supported by clear explanations. This is superior to a static text format for understanding the trade-offs in spectrometer design. -->
+    <!-- Visualization & Content Choices: Report Info: Equations relating L_D, L_F, and optical parameters. -> Goal: Allow users to interactively explore these relationships to select components. -> Viz/Presentation Method: An interactive calculator with sliders/inputs and a dynamic 2D canvas diagram. -> Interaction: Users adjust input parameters like wavelength or select standard lens focal lengths. All outputs and the canvas diagram update in real-time. -> Justification: This provides immediate, tangible feedback. The custom canvas diagram is superior to a generic chart as it directly visualizes the physical geometry of the spectrometer, making the abstract equations intuitive and showing how component sizes change relative to each other. -> Library/Method: Vanilla JS for calculations and direct canvas drawing. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+        }
+        .calculator-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            padding: 2rem;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            transition: all 0.3s ease-in-out;
+        }
+        .input-group label {
+            color: #475569; /* slate-600 */
+        }
+        .input-field {
+            background-color: #f1f5f9; /* slate-100 */
+            border: 1px solid #e2e8f0; /* slate-200 */
+            color: #1e293b; /* slate-800 */
+        }
+        .output-value {
+            color: #ca8a04; /* amber-500 */
+            font-weight: 600;
+        }
+        .btn-primary {
+            background-color: #4338ca; /* indigo-700 */
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #3730a3; /* indigo-800 */
+        }
+         input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #4338ca; /* indigo-700 */
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #4338ca; /* indigo-700 */
+            cursor: pointer;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900">Spectrometer Design Calculator</h1>
+            <p class="text-lg text-slate-600 mt-2">Part 5: An Interactive Guide to Selecting Detector & Focusing Lens</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Left Column: Calculator -->
+            <div class="calculator-card">
+                <div class="space-y-6">
+                    <div>
+                        <h3 class="text-xl font-semibold mb-4 border-b pb-2">1. Input Parameters</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="input-group">
+                                <label for="lambda_min" class="block text-sm font-medium mb-1">Min Wavelength (λ_min)</label>
+                                <input type="range" id="lambda_min" min="300" max="1000" value="400" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                                <span class="text-sm text-slate-500"><span id="lambda_min_val">400</span> nm</span>
+                            </div>
+                             <div class="input-group">
+                                <label for="lambda_max" class="block text-sm font-medium mb-1">Max Wavelength (λ_max)</label>
+                                <input type="range" id="lambda_max" min="300" max="1000" value="700" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                                <span class="text-sm text-slate-500"><span id="lambda_max_val">700</span> nm</span>
+                            </div>
+                            <div class="input-group">
+                                <label for="grating_density" class="block text-sm font-medium mb-1">Grating (lines/mm)</label>
+                                <input type="number" id="grating_density" value="600" class="w-full p-2 rounded-md input-field">
+                            </div>
+                            <div class="input-group">
+                                <label for="diffraction_order" class="block text-sm font-medium mb-1">Diffraction Order (m)</label>
+                                <input type="number" id="diffraction_order" value="1" class="w-full p-2 rounded-md input-field">
+                            </div>
+                             <div class="input-group col-span-1 md:col-span-2">
+                                <label for="beta_angle" class="block text-sm font-medium mb-1">Diffraction Angle (β) degrees</label>
+                                <input type="number" id="beta_angle" value="20" class="w-full p-2 rounded-md input-field">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="text-xl font-semibold mb-4 border-b pb-2">2. Calculation Method</h3>
+                        <p class="text-sm text-slate-600 mb-3">Custom lenses are costly. It's often more practical to start with a standard lens focal length and find a suitable detector.</p>
+                        <div class="flex space-x-4" id="method_selector">
+                            <button data-method="lens_first" class="method-btn flex-1 p-2 rounded-md text-sm font-semibold bg-indigo-600 text-white shadow">Lens First (Recommended)</button>
+                            <button data-method="detector_first" class="method-btn flex-1 p-2 rounded-md text-sm font-semibold bg-slate-200 text-slate-700">Detector First</button>
+                        </div>
+                    </div>
+
+                    <div id="calculation_inputs" class="space-y-4">
+                        <div class="input-group" id="lens_input_group">
+                            <label for="lens_focal_length" class="block text-sm font-medium mb-1">Focusing Lens ($L_F$)</label>
+                            <select id="lens_focal_length" class="w-full p-2 rounded-md input-field">
+                                <option value="30">30 mm</option>
+                                <option value="50">50 mm</option>
+                                <option value="75" selected>75 mm</option>
+                                <option value="100">100 mm</option>
+                                <option value="150">150 mm</option>
+                                <option value="200">200 mm</option>
+                            </select>
+                        </div>
+                         <div class="input-group hidden" id="detector_input_group">
+                            <label for="detector_length" class="block text-sm font-medium mb-1">Detector Length ($L_D$) in mm</label>
+                            <input type="number" id="detector_length" value="14.3" class="w-full p-2 rounded-md input-field">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 class="text-xl font-semibold mb-4 border-b pb-2">3. Calculated Results</h3>
+                        <div class="grid grid-cols-2 gap-4 text-center">
+                            <div class="bg-slate-50 p-3 rounded-lg">
+                                <p class="text-sm text-slate-500">Required Detector Length ($L_D$)</p>
+                                <p class="text-2xl output-value" id="output_detector_length">--</p>
+                                <p class="text-sm text-slate-500">mm</p>
+                            </div>
+                            <div class="bg-slate-50 p-3 rounded-lg">
+                                <p class="text-sm text-slate-500">Required Focusing Lens ($L_F$)</p>
+                                <p class="text-2xl output-value" id="output_focal_length">--</p>
+                                <p class="text-sm text-slate-500">mm</p>
+                            </div>
+                            <div class="bg-slate-50 p-3 rounded-lg col-span-2">
+                                <p class="text-sm text-slate-500">Linear Dispersion</p>
+                                <p class="text-2xl output-value" id="output_dispersion">--</p>
+                                <p class="text-sm text-slate-500">nm / mm</p>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Right Column: Visualization & Explanation -->
+            <div class="space-y-8">
+                <div class="calculator-card">
+                    <h3 class="text-xl font-semibold mb-2">Optical Layout Visualization</h3>
+                    <p class="text-sm text-slate-600 mb-4">This diagram illustrates the relationship between the focusing lens, angular span of light, and the detector. It updates as you change the parameters.</p>
+                    <div class="bg-slate-100 rounded-md p-2 aspect-video">
+                        <canvas id="spectrometer_canvas"></canvas>
+                    </div>
+                </div>
+
+                <div class="calculator-card">
+                    <h3 class="text-xl font-semibold mb-2">Design Principles</h3>
+                    <div class="prose prose-slate max-w-none text-sm text-slate-600 space-y-4">
+                        <h4>The Role of the Focusing Lens and Detector</h4>
+                        <p>The focusing lens is a key component in a spectrometer. Its primary function is to focus the dispersed light from the grating onto the detector. The detector, typically a linear array sensor, then measures the intensity of each wavelength. A key design consideration is ensuring that the full range of wavelengths fits precisely onto the physical length of your detector.</p>
+                        
+                        <h4>Relationship Between Span and Detector Length</h4>
+                        <p>The angular span of the dispersed light, &delta; = &beta;<sub>&lambda;max</sub> - &beta;<sub>&lambda;min</sub>, is the difference between the diffraction angles for your maximum and minimum wavelengths. The focusing lens converts this angular span into a linear distance on the detector.</p>
+
+                        <h4>Calculating Focal Length ($L_F$)</h4>
+                        <p>The linear dispersion relates the change in position on the detector (dx) to the change in wavelength (d&lambda;). By approximating for the full span, we can derive a practical formula to find either the required detector length or the focal length of the focusing lens:</p>
+                        <p class="text-center font-mono bg-slate-100 p-2 rounded-md text-slate-800 text-xs md:text-sm overflow-x-auto">L<sub>F</sub> = (L<sub>D</sub> &times; d &times; cos(&beta;)) / (m &times; (&lambda;<sub>max</sub> - &lambda;<sub>min</sub>))</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const lambdaMinSlider = document.getElementById('lambda_min');
+        const lambdaMaxSlider = document.getElementById('lambda_max');
+        const lambdaMinVal = document.getElementById('lambda_min_val');
+        const lambdaMaxVal = document.getElementById('lambda_max_val');
+        const gratingDensityInput = document.getElementById('grating_density');
+        const diffractionOrderInput = document.getElementById('diffraction_order');
+        const betaAngleInput = document.getElementById('beta_angle');
+
+        const methodSelector = document.getElementById('method_selector');
+        const lensInputGroup = document.getElementById('lens_input_group');
+        const detectorInputGroup = document.getElementById('detector_input_group');
+        const lensFocalLengthSelect = document.getElementById('lens_focal_length');
+        const detectorLengthInput = document.getElementById('detector_length');
+
+        const outputDetectorLength = document.getElementById('output_detector_length');
+        const outputFocalLength = document.getElementById('output_focal_length');
+        const outputDispersion = document.getElementById('output_dispersion');
+        
+        const canvas = document.getElementById('spectrometer_canvas');
+        const ctx = canvas.getContext('2d');
+
+        let currentMethod = 'lens_first';
+
+        function updateSliderLabels() {
+            lambdaMinVal.textContent = lambdaMinSlider.value;
+            lambdaMaxVal.textContent = lambdaMaxSlider.value;
+            if (parseInt(lambdaMinSlider.value) >= parseInt(lambdaMaxSlider.value)) {
+                lambdaMinSlider.value = parseInt(lambdaMaxSlider.value) - 1;
+                lambdaMinVal.textContent = lambdaMinSlider.value;
+            }
+        }
+
+        function switchMethod(method) {
+            currentMethod = method;
+            const buttons = methodSelector.querySelectorAll('.method-btn');
+            buttons.forEach(btn => {
+                if (btn.dataset.method === method) {
+                    btn.classList.remove('bg-slate-200', 'text-slate-700');
+                    btn.classList.add('bg-indigo-600', 'text-white', 'shadow');
+                } else {
+                    btn.classList.add('bg-slate-200', 'text-slate-700');
+                    btn.classList.remove('bg-indigo-600', 'text-white', 'shadow');
+                }
+            });
+
+            if (method === 'lens_first') {
+                lensInputGroup.classList.remove('hidden');
+                detectorInputGroup.classList.add('hidden');
+            } else {
+                lensInputGroup.classList.add('hidden');
+                detectorInputGroup.classList.remove('hidden');
+            }
+            calculateAndDisplay();
+        }
+
+        function calculateAndDisplay() {
+            const lambdaMin = parseFloat(lambdaMinSlider.value) * 1e-9; // m
+            const lambdaMax = parseFloat(lambdaMaxSlider.value) * 1e-9; // m
+            const gratingLinesPerMM = parseFloat(gratingDensityInput.value);
+            const d = 1e-3 / gratingLinesPerMM; // m
+            const m = parseInt(diffractionOrderInput.value);
+            const beta = parseFloat(betaAngleInput.value) * (Math.PI / 180); // radians
+
+            const wavelengthSpan = lambdaMax - lambdaMin;
+
+            if (isNaN(lambdaMin) || isNaN(lambdaMax) || isNaN(d) || isNaN(m) || isNaN(beta) || wavelengthSpan <= 0) {
+                outputDetectorLength.textContent = 'Invalid';
+                outputFocalLength.textContent = 'Invalid';
+                outputDispersion.textContent = 'Invalid';
+                return;
+            }
+
+            let Lf, Ld;
+
+            if (currentMethod === 'lens_first') {
+                Lf = parseFloat(lensFocalLengthSelect.value) / 1000; // m
+                const numerator = m * Lf * wavelengthSpan;
+                const denominator = d * Math.cos(beta);
+                Ld = (numerator / denominator) * 1000; // mm
+
+                outputDetectorLength.textContent = Ld.toFixed(2);
+                outputFocalLength.textContent = (Lf * 1000).toFixed(1);
+            } else {
+                Ld = parseFloat(detectorLengthInput.value) / 1000; // m
+                const numerator = Ld * d * Math.cos(beta);
+                const denominator = m * wavelengthSpan;
+                Lf = (numerator / denominator) * 1000; // mm
+
+                outputDetectorLength.textContent = (Ld * 1000).toFixed(1);
+                outputFocalLength.textContent = Lf.toFixed(2);
+                Lf = Lf / 1000;
+            }
+
+            const linearDispersion = (wavelengthSpan * 1e9) / (Ld); // nm/mm
+            outputDispersion.textContent = linearDispersion.toFixed(2);
+            
+            drawVisualization(Lf * 1000, Ld);
+        }
+
+        function drawVisualization(lf_mm, ld_mm) {
+            const parent = canvas.parentElement;
+            canvas.width = parent.clientWidth;
+            canvas.height = parent.clientHeight;
+            
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            
+            ctx.fillStyle = '#475569'; // slate-600
+            ctx.strokeStyle = '#94a3b8'; // slate-400
+
+            // Determine scale
+            const maxDimension = Math.max(lf_mm, ld_mm * 2);
+            const scale = (w * 0.7) / maxDimension;
+
+            const lensHeight = Math.min(h * 0.8, ld_mm * scale * 2.5);
+            const lensCenterX = w * 0.2;
+            const lensCenterY = h / 2;
+            const lf_px = lf_mm * scale;
+            const ld_px_half = (ld_mm / 2) * scale;
+            
+            // Draw Lens
+            ctx.beginPath();
+            ctx.moveTo(lensCenterX, lensCenterY - lensHeight / 2);
+            ctx.quadraticCurveTo(lensCenterX + 20, lensCenterY, lensCenterX, lensCenterY + lensHeight / 2);
+            ctx.quadraticCurveTo(lensCenterX - 20, lensCenterY, lensCenterX, lensCenterY - lensHeight / 2);
+            ctx.fillStyle = 'rgba(129, 140, 248, 0.3)'; // indigo-300
+            ctx.fill();
+            ctx.strokeStyle = '#6366f1'; // indigo-500
+            ctx.stroke();
+
+            // Draw Detector
+            const detectorX = lensCenterX + lf_px;
+            ctx.beginPath();
+            ctx.moveTo(detectorX, lensCenterY - ld_px_half);
+            ctx.lineTo(detectorX, lensCenterY + ld_px_half);
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = '#ca8a04'; // amber-500
+            ctx.stroke();
+            
+            // Draw rays
+            ctx.beginPath();
+            ctx.setLineDash([5, 5]);
+            ctx.moveTo(0, lensCenterY);
+            ctx.lineTo(detectorX, lensCenterY); // Optical axis
+            ctx.strokeStyle = '#94a3b8'; // slate-400
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.setLineDash([]);
+            ctx.moveTo(0, lensCenterY);
+            ctx.lineTo(lensCenterX, lensCenterY - ld_px_half / 2);
+            ctx.lineTo(detectorX, lensCenterY - ld_px_half); // Top ray
+            ctx.strokeStyle = '#ef4444'; // red-500
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(0, lensCenterY);
+            ctx.lineTo(lensCenterX, lensCenterY + ld_px_half / 2);
+            ctx.lineTo(detectorX, lensCenterY + ld_px_half); // Bottom ray
+            ctx.strokeStyle = '#3b82f6'; // blue-500
+            ctx.stroke();
+
+            // Labels
+            ctx.fillStyle = '#1e293b'; // slate-800
+            ctx.font = '12px Inter';
+            ctx.textAlign = 'center';
+            // Lf label
+            if (lf_px > 40) {
+                ctx.beginPath();
+                ctx.moveTo(lensCenterX, lensCenterY + lensHeight/2 + 15);
+                ctx.lineTo(detectorX, lensCenterY + lensHeight/2 + 15);
+                ctx.stroke();
+                ctx.fillText(`Lf = ${lf_mm.toFixed(1)} mm`, lensCenterX + lf_px/2, lensCenterY + lensHeight/2 + 30);
+            }
+            // Ld label
+             if (ld_px_half * 2 > 20) {
+                ctx.textAlign = 'left';
+                ctx.fillText(`Ld = ${ld_mm.toFixed(1)} mm`, detectorX + 10, lensCenterY);
+            }
+        }
+
+        lambdaMinSlider.addEventListener('input', () => { updateSliderLabels(); calculateAndDisplay(); });
+        lambdaMaxSlider.addEventListener('input', () => { updateSliderLabels(); calculateAndDisplay(); });
+        gratingDensityInput.addEventListener('input', calculateAndDisplay);
+        diffractionOrderInput.addEventListener('input', calculateAndDisplay);
+        betaAngleInput.addEventListener('input', calculateAndDisplay);
+        lensFocalLengthSelect.addEventListener('change', calculateAndDisplay);
+        detectorLengthInput.addEventListener('input', calculateAndDisplay);
+        
+        methodSelector.addEventListener('click', (e) => {
+            if (e.target.classList.contains('method-btn')) {
+                switchMethod(e.target.dataset.method);
+            }
+        });
+        
+        window.addEventListener('resize', calculateAndDisplay);
+
+        // Initial setup
+        updateSliderLabels();
+        switchMethod('lens_first');
+    </script>
+</body>
+</html>
